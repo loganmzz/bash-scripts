@@ -1,0 +1,115 @@
+#!/usr/bin/env bash
+
+set -o pipefail
+
+function kubecfg.context.countBy() {
+    local context_field_name="$1"; shift
+    local context_field_value="$1"; shift
+
+    kubectl config view -o json | jq -r --arg key "${context_field_name}" --arg value "${context_field_value}" '[.contexts[] | select(.context[$key]==$value)] | length' || {
+        echo "Can't count context matching ${context_field_name} '${context_field_value}'"
+        return 1
+    } >&2
+}
+
+function kubecfg.context.find() {
+    local context_name="$1"; shift
+
+    kubectl config view -o json | jq --arg 'context_name' "${context_name}" '.contexts[] | select(.name==$context_name)' || {
+        echo "Can't get context '${context_name}'"
+        return 1
+    } >&2
+}
+
+function kubecfg.context.get() {
+    local field_name="$1"; shift
+    jq -r --arg 'field' "${field_name}" '.context[$field]' || {
+        echo "Error while extracting ${field_name}"
+        return 1
+    } >&2
+}
+
+function kubecfg.unset() {
+    local unset_kind="$1"; shift
+    local unset_name="$1"; shift
+
+    echo "=> Remove"
+
+    kubectl config unset "${unset_kind}s.${unset_name}" || {
+        echo "Can't remove ${unset_kind} '${unset_name}' from Kubernetes CLI configuration"
+        return 1
+    } >&2
+}
+
+function kubecfg.clear.byKind() {
+    local unset_kind="$1"; shift
+    local unset_name="$1"; shift
+
+    local context_count=0
+    context_count="$(kubecfg.context.countBy "${unset_kind}" "${unset_name}")" || return $?
+
+    if [[ "${context_count}" -eq 0 ]]; then
+        kubecfg.unset "${unset_kind}" "${unset_name}" || return $?
+    else
+        echo "=> Still in use by ${context_count} context(s)"
+    fi
+}
+
+function kubecfg.command.clear-context() {
+    local context_name="$1"; shift
+    [[ ! -z "${context_name}" ]] || {
+        echo "Missing context name"
+        return 1
+    } >&2
+
+    echo "  ¤ context/${context_name}"
+    local kubectl_config_context=''
+    kubectl_config_context="$(kubecfg.context.find "${context_name}" <<<"${kubectl_config}")" || return $?
+    [[ ! -z "${kubectl_config_context}" ]] || {
+        echo " => Already removed"
+        echo
+        return 0
+    }
+    kubecfg.unset 'context' "${context_name}" || return $?
+    echo
+
+    local rc=0
+    for unset_kind in 'cluster' 'user'; do
+        local unset_name=''
+        unset_name="$(kubecfg.context.get "${unset_kind}" <<<"${kubectl_config_context}")" &&
+        echo "  ¤ ${unset_kind}/${unset_name}" &&
+        kubecfg.clear.byKind "${unset_kind}" "${unset_name}" ||
+        rc=$?
+        echo
+    done
+
+    return $rc
+}
+
+function kubecfg.command.help() {
+    echo "Supported command: "
+
+    local prefix='kubecfg.command.'
+    local foundfn=''
+    for foundfn in $(declare -F | cut -d ' ' -f 3 | grep -x "${prefix/./\.}.*"); do
+        echo "  - ${foundfn#"$prefix"}"
+    done
+}
+
+function kubecfg.main() {
+    local command_name="$1"; shift
+
+    if [[ -z "${command_name}" ]]; then
+        kubecfg.command.help
+    else
+        local command_function="kubecfg.command.${command_name}"
+        type -t "${command_function}" >/dev/null 2>&1 || {
+            echo "Unsupported command: '${command_name}'"
+            kubecfg.command.help
+            return 1
+        } >&2
+        "${command_function}" "$@"
+    fi
+}
+
+kubecfg.main "$@"
