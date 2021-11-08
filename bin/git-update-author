@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+
+basedir="$(cd "$(dirname "${BASH_SOURCE}")" >/dev/null; pwd)" || exit 1
+
+function main() {
+    local_name="$(git config --local user.name)"
+    local_email="$(git config --local user.email)"
+
+    global_name="$(git config --global user.name)"
+    global_email="$(git config --global user.email)"
+
+    local rc=0
+    [[ ! -z "${local_name}" ]] || {
+        echo "Git local repository user name is missing"  >&2
+        rc=1
+    }
+    [[ ! -z "${local_email}" ]] || {
+        echo "Git local user email is missing" >&2
+        rc=1
+    }
+    [[ ! -z "${global_name}" ]] || {
+        echo "Git gloal repository user name is missing"  >&2
+        rc=1
+    }
+    [[ ! -z "${global_email}" ]] || {
+        echo "Git global user email is missing" >&2
+        rc=1
+    }
+    [[ $rc == 0 ]] || return $rc
+    [[ "${local_email}" != "${global_email}" || "${local_name}" != "${global_name}" ]] || {
+        echo "Git global & local user information must be different" >&2
+        return 1
+    }
+    git filter-branch --env-filter "
+if [ -z \"\${GIT_COMMITTER_EMAIL}\" -o \"\${GIT_COMMITTER_EMAIL}\" = '${global_email}' -o \"\${GIT_COMMITTER_NAME}\" = '${global_name}' ]; then
+    export GIT_COMMITTER_NAME='${local_name}'
+    export GIT_COMMITTER_EMAIL='${local_email}'
+fi
+if [ -z \"\${GIT_AUTHOR_EMAIL}\" -o \"\${GIT_AUTHOR_EMAIL}\" = '${global_email}' -o \"\${GIT_AUTHOR_NAME}\" = '${global_name}' ]; then
+    export GIT_AUTHOR_NAME='${local_name}'
+    export GIT_AUTHOR_EMAIL='${local_email}'
+fi
+" "$@"
+}
+
+main "$@"
