@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+
+basedir="$(cd "$(dirname "${BASH_SOURCE}")" >/dev/null; pwd)" || exit 1
+
+function main() {
+    local pwd="$(pwd)"
+    docker run --rm -ti -v "${pwd}:${pwd}" -u "$(id -u):$(id -g)" -w "${pwd}" -e "HOME=${pwd}" "$@"
+}
+
+main "$@"
