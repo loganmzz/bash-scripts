@@ -86,6 +86,36 @@ function kubecfg.command.clear-context() {
     return $rc
 }
 
+function kubecfg.command.merge() {
+    [[ -f "${KUBECONFIG}" ]] || {
+        echo "KUBECONFIG environment variable should point to exactly one existing file"
+        return 1
+    } >&2
+    local kubeconfigs=''
+    local rc=0
+    while [[ $# > 0 ]]; do
+        local kubeconfig="$1"; shift
+        if [[ -f "${kubeconfig}" ]]; then
+            kubeconfigs=":${kubeconfig}"
+        else
+            rc=1
+            echo "${kubeconfig} file doesn't exist" >&2
+        fi
+    done
+    [[ $rc == 0 ]] || return 1
+    [[ -z "${kubeconfigs}" ]] || {
+        local yaml=''
+        yaml="$(KUBECONFIG="${KUBECONFIG}${kubeconfigs}" kubectl config view --flatten)" || {
+            echo "Can't merge Kubernetes configuration files"
+            return 1
+        } >&2
+        [[ ! -z "${yaml}" ]] || return 1
+        echo "Save '${KUBECONFIG}' to '${KUBECONFIG}.bak'" &&
+        cp "${KUBECONFIG}" "${KUBECONFIG}.bak" &&
+        echo "${yaml}" > "${KUBECONFIG}"
+    }
+}
+
 function kubecfg.command.help() {
     echo "Supported command: "
 
