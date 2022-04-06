@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -o pipefail
+
+ssh-keygen -t 'ed25519' -o -a 100 "$@"
