@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+
+function main() {
+    local file="$1"; shift
+
+    [[ ! -z "${file}" ]] || {
+        echo "Filename is missing"
+        return 1
+    } >&2
+
+    local dir='..'
+    local absolutepath=''
+    while [[ ! -e "${dir}/${file}" && "${absolutepath}" != "/" ]]; do
+        dir="${dir}/.."
+        absolutepath="$(cd "${dir}" && pwd)" || {
+            echo "Can't compute absolute path"
+            return 1
+        } >&2
+    done
+
+    [[ ! -e "${dir}/${file}" ]] || echo "${dir}/${file}"
+}
+
+main "$@"
