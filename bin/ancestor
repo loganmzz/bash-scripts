@@ -1,21 +1,69 @@
 #!/usr/bin/env bash
 
+bin="$0"
+
+function usage() {
+    cat <<EOF
+Usage: ${bin} [<from directory>] [filename]
+
+    from parent directory: Optional directory which search will start from **parent** (!) one.
+                           Default to current directory.
+    filename:              filename to locate
+
+EOF
+}
+
 function main() {
-    local file="$1"; shift
+    local file=''
+    local dir=''
+
+    case $# in
+        0)
+            {
+                echo "Missing arguments"
+                usage
+                return 1
+            } >&2
+            ;;
+
+        1)
+            dir='.'
+            file="$1"; shift
+            ;;
+
+        2)
+            dir="$1"; shift
+            file="$1"; shift
+            ;;
+
+        *)
+            {
+                echo "Too many arguments (length: $#)"
+                usage
+                return 1
+            } >&2
+
+    esac
+
+    local rc=0
+    [[ ! -z "${file}" ]] || {
+        echo "Filename is missing"
+        rc=1
+    } >&2
 
     [[ ! -z "${file}" ]] || {
         echo "Filename is missing"
-        return 1
+        rc=1
     } >&2
 
-    local dir='..'
-    local absolutepath=''
-    while [[ ! -e "${dir}/${file}" && "${absolutepath}" != "/" ]]; do
-        dir="${dir}/.."
-        absolutepath="$(cd "${dir}" && pwd)" || {
-            echo "Can't compute absolute path"
-            return 1
-        } >&2
+    [[ $rc == 0 ]] || {
+        usage
+        return $rc
+    } >&2
+
+    dir="$(realpath "${dir}/..")"
+    while [[ ! -e "${dir}/${file}" && "${dir}" != "/" ]]; do
+        dir="$(realpath ${dir}/..)"
     done
 
     [[ ! -e "${dir}/${file}" ]] || echo "${dir}/${file}"
