@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -o pipefail
+
+kubectl get pod "$@" -o json | jq '[ .items[] | { namespace: .metadata.namespace, name: .metadata.name, status: .status.phase } | select(.status | IN("Running","Succeeded") | not)]'
