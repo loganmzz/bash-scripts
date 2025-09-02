@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-for resource in $(kubectl api-resources --verbs=list --namespaced -o name); do
+for resource in $(kubectl api-resources --verbs=list --namespaced -o name "$@"); do
     [[ "${resource}" == 'events' ]] || {
         list="$(kubectl get "${resource}" --ignore-not-found "$@")"
         [[ -z "${list}" ]] || {
