@@ -1,0 +1,124 @@
+#!/usr/bin/env bash
+
+set -o pipefail
+
+bin="$0"
+
+function main.help() {
+  cat <<EOF
+Usage: ${bin} <json_plan> <resource_address> [json_path] [-- [diff_command...]]
+
+Show diff of a resource from a JSON Terraform plan
+
+Arguments:
+  json_plan:          Path to a JSON Terraform plan (created with 'terraform show -json <plan>')
+  resource_address:   Address of the resource to diff (e.g. 'aws_instance.example')
+  json_path:          Optional path of change to diff (e.g. '.tags')
+  diff_command:       Optional command to use for diffing (default to printing before/after). Use '{before}' or '{after}' to reference the before/after files.
+EOF
+}
+
+function main() {
+  local rc=0
+
+  local json_plan="$1"; shift
+  if [[ -z "${json_plan}" ]]; then
+    rc=$?
+    echo "Missing JSON plan" >&2
+  else
+    [[ -f "${json_plan}" ]] || {
+      rc=$?
+      echo "Invalid JSON plan '${json_plan}': not a file" >&2
+    }
+  fi
+
+  local resource_address="$1"; shift
+  [[ ! -z "${resource_address}" ]] || {
+    rc=$?
+    echo "Missing Terraform resource address" >&2
+  }
+
+  local json_path=''
+  if [[ "$1" != "--" ]]; then
+    json_path="$1"; shift
+  fi
+
+  if [[ $# > 0 ]]; then
+    if [[ "$1" == "--" ]]; then
+      shift
+    else
+      rc=$?
+      echo "Unexpected argument '$1'. If diff command, use '--' to separate from rest of arguments" >&2
+      return $rc
+    fi
+  fi
+
+  [[ $rc == 0 ]] || {
+    main.help >&2
+    return $rc
+  }
+
+  local resource_changes=''
+  resource_changes="$(jq --arg 'resource_address' "${resource_address}" '.resource_changes[] | select(.address == $resource_address)' < "${json_plan}")" || {
+    rc=$?
+    echo "Failed to extract resource changes for '${resource_address}' from JSON plan '${json_plan}'" >&2
+    return $rc
+  }
+  [[ ! -z "${resource_changes}" ]] || {
+    rc=$?
+    echo "Resource '${resource_address}' not found in JSON plan" >&2
+    return $rc
+  }
+
+  if [[ $# == 0 ]]; then
+    echo "-------------------- Before --------------------"
+    jq -r ".change.before${json_path}" <<<"${resource_changes}"
+    echo "-------------------- After ---------------------"
+    jq -r ".change.after${json_path}" <<<"${resource_changes}"
+    echo "------------------------------------------------"
+  else
+
+    local before_file=''
+    before_file="$(mktemp)" || {
+      rc=$?
+      echo "Unable to create temporary file for before state" >&2
+      return $?
+    }
+    local after_file=''
+    after_file="$(mktemp)" || {
+      rc=$?
+      echo "Unable to create temporary file for after state" >&2
+      rm -f "${before_file}"
+      return $rc
+    }
+
+    diff_command=()
+    while [[ $# > 0 ]]; do
+      local diff_command_arg="$1"; shift
+      case "${diff_command_arg}" in
+        '{before}')
+          diff_command+=("${before_file}")
+          ;;
+        '{after}')
+          diff_command+=("${after_file}")
+          ;;
+        *)
+          diff_command+=("${diff_command_arg}")
+          ;;
+      esac
+    done
+
+    jq -r ".change.before${json_path}" <<<"${resource_changes}" > "${before_file}" &&
+    jq -r ".change.after${json_path}"  <<<"${resource_changes}" > "${after_file}" &&
+    "${diff_command[@]}" &&
+    true; rc=$?
+    rm -f "${before_file}" "${after_file}" || {
+      rc=$?
+      echo "Unable to remove temporary files" >&2
+    }
+  fi
+
+  return $rc
+}
+
+main "$@"
