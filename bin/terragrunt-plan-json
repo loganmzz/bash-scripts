@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+
+filepath="$1"; shift
+[[ ! -z "${filepath}" ]] || filepath="terragrunt.tfplan"
+
+filepath="$(realpath "${filepath}")" &&
+strip_json="$(basename "${filepath}" '.json')" &&
+true || exit $?
+
+if [[ "$(basename "${filepath}")" == "${strip_json}" ]]; then
+  planpath="${filepath}"
+  jsonpath="${filepath}.json"
+else
+  planpath="$(dirname "${filepath}")/${strip_json}"
+  jsonpath="${filepath}"
+fi
+
+terragrunt plan -out "${planpath}" &&
+terragrunt show -json "${planpath}" | jq > "${jsonpath}" &&
+echo 'JSON plan written to:' &&
+echo "${jsonpath}" &&
+true || exit $?
